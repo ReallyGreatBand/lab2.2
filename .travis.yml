@@ -6,7 +6,5 @@ services:
 script:
   - docker-compose -f docker-compose.yaml -f docker-compose.test.yaml up --exit-code-from test
 after_script:
-  # log test results
-  - docker cp go-lab2_test_1:/go/src/practice/out/integration-tests logs
-  - ls logs
-  - cat logs/bood_test
+  - docker container ls -aq | xargs -I{} docker cp {}:/go/src/practice-2 test
+  - cat test/out/integration-tests/bood_test
