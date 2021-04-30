@@ -1,0 +1,16 @@
+language: go
+go:
+  - '1.15'
+services:
+  - docker
+script:
+  - docker-compose -f docker-compose.yaml -f docker-compose.test.yaml up --exit-code-from test
+after_script:
+  # create output directory
+  - mkdir logs
+  # copy out directory from docker containers
+  - docker container ls -aq | xargs -I{} docker cp {}:/go/src/practice-2/out/ logs/
+  # log test results
+  - cat logs/server/bood_test
+  - cat logs/lb/bood_test
+  - cat logs/integration-tests/bood_test
