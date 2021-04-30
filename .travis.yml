@@ -9,7 +9,10 @@ after_script:
   # create output directory
   - mkdir logs
   # copy out directory from docker containers
-  - docker container ls -aq | xargs -I{} docker cp {}:/go/src/practice-2/out/ logs/
+  - docker container ls -aq | xargs -I{} docker cp {}:/go/src/practice-2 test
+  - ls test
+  - ls test/out
+  - docker container ls -aq | xargs -I{} docker cp {}:/go/src/practice-2/out logs
   # log test results
   - cat logs/server/bood_test
   - cat logs/lb/bood_test
