@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/ReallyGreatBand/lab2.2/httptools"
@@ -28,14 +29,16 @@ type server struct {
 }
 
 type leastConnections struct {
-	servers []server
+	servers []*server
+	mutex *sync.Mutex
 }
 
-func (lc *leastConnections) getLeastConnected() (server, error) {
+func (lc *leastConnections) getLeastConnected() (*server, func(), error) {
 	var (
 		min = -1
 		index = 0
 	)
+	lc.mutex.Lock()
 	for i, server := range lc.servers {
 		if (min == -1 || server.counter < min) && server.status {
 			min = server.counter
@@ -43,36 +46,42 @@ func (lc *leastConnections) getLeastConnected() (server, error) {
 		}
 	}
 	if !lc.servers[index].status {
-		return lc.servers[index], fmt.Errorf("no servers online")
+		lc.mutex.Unlock()
+		return lc.servers[index], func() {
+			lc.servers[index].counter--
+		}, fmt.Errorf("no servers online")
 	}
 
 	lc.servers[index].counter++
-	return lc.servers[index], nil
+	lc.mutex.Unlock()
+	return lc.servers[index], func() {
+		lc.servers[index].counter--
+	}, nil
 }
 
-func (lc *leastConnections) Initialize(hosts []string) (*leastConnections, error) {
+func Initialize(hosts []string) (*leastConnections, error) {
 	if len(hosts) == 0 {
 		return nil, fmt.Errorf("no servers available")
 	}
 
-	servers := make([]server, len(hosts))
+	servers := make([]*server, len(hosts))
 	for index := range servers {
-		servers[index] = server{
+		servers[index] = &server{
 			host: hosts[index],
 			counter: 0,
-			status: false,
+			status: true,
 		}
 	}
 
 	return &leastConnections{
 		servers,
+		new(sync.Mutex),
 	}, nil
 }
 
 var (
 	timeout        = time.Duration(*timeoutSec) * time.Second
-	lc             = leastConnections{}
-	serversPool, _ = lc.Initialize([]string{
+	serversPool, _ = Initialize([]string{
 		"server1:8080",
 		"server2:8080",
 		"server3:8080",
@@ -140,21 +149,21 @@ func main() {
 		go func() {
 			for range time.Tick(10 * time.Second) {
 				server.status = health(server.host)
-				log.Println(server.host)
-				log.Println(server.host, server.status)
+				log.Println(server.host, server.status, server.counter)
 			}
 		}()
 	}
 
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		// TODO: Рееалізуйте свій алгоритм балансувальника.
-		server, err := serversPool.getLeastConnected()
+		server, restore, err := serversPool.getLeastConnected()
 		if err != nil {
 			log.Println(err)
 			rw.WriteHeader(500)
 		} else {
 			log.Println(server)
 			forward(server.host, rw, r)
+			restore()
 		}
 	}))
 

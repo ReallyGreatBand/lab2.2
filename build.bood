@@ -28,3 +28,16 @@ tested_binary {
 }
 
 // TODO: Додайте модуль для інтеграційних тестів.
+tested_binary {
+    name: "integration-tests",
+    pkg: "github.com/ReallyGreatBand/lab2.2/integration",
+    srcs: [
+        "httptools/**/*.go",
+        "signal/**/*.go",
+        "cmd/lb/*.go",
+        "cmd/server/*.go"
+    ],
+    testPkg: "./integration",
+    srcsExclude: ["**/*_test.go"],
+    testSrcs: ["integration/*_test.go"]
+}
