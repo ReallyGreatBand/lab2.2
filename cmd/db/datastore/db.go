@@ -23,11 +23,11 @@ type Db struct {
 	segSize int64
 }
 
-func NewDb(dir string) (*Db, error) {
+func NewDb(dir string, segmentSize int64) (*Db, error) {
 	db := &Db{
 		dirPath: dir,
 		segments: nil,
-		segSize: defaultSegment,
+		segSize: segmentSize,
 	}
 	err := db.recover()
 	if err != nil && err != io.EOF {
@@ -67,6 +67,9 @@ func (db *Db) recover() error {
 			index: make(hashIndex),
 		})
 	}
+
+	db.segments = segments
+
 	return err
 }
 
@@ -94,7 +97,7 @@ func (db *Db) Get(key string) (string, error) {
 func (db *Db) Put(key, value string) error {
 	err := db.tail().put(key, value)
 	if err != nil {
-		return fmt.Errorf("unexpected error inserting (%s, %s): %s", key, value, err)
+		return err
 	}
 
 	if db.tail().outOffset >= db.segSize {
@@ -112,12 +115,13 @@ func (db *Db) tail() *segment {
 
 func (db *Db) createSegment() error {
 	tail :=  db.tail()
+
 	err := tail.checkHealth()
 	if err != nil {
 		return err
 	}
 	name := tail.file.Name()
-	count, err := strconv.Atoi(name[len(name):])
+	count, err := strconv.Atoi(name[len(name) - 1:])
 	path := filepath.Join(db.dirPath, fmt.Sprintf("%s%d", segmentPrefix, count + 1))
 
 	seg, err := initSegment(path)
@@ -134,8 +138,8 @@ func (db *Db) createSegment() error {
 }
 
 func (db *Db) merge() error {
-	mergees := db.segments[:len(db.segments) - 2]
-	newPath := filepath.Join(db.dirPath, segmentPrefix, "-merged")
+	mergees := db.segments[0:len(db.segments) - 1]
+	newPath := filepath.Join(db.dirPath, segmentPrefix + "-merged")
 
 	file, err := os.OpenFile(newPath, os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
@@ -151,7 +155,7 @@ func (db *Db) merge() error {
 
 	keys := make(map[string]int)
 
-	for i := len(mergees); i >= 0; i-- {
+	for i := len(mergees) - 1; i >= 0; i-- {
 		mergee := mergees[i]
 		for key := range mergee.index {
 			if _, exists := keys[key]; exists {
