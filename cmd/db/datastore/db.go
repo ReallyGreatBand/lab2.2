@@ -138,6 +138,7 @@ func (db *Db) createSegment() error {
 }
 
 func (db *Db) merge() error {
+	previos := db.segments
 	mergees := db.segments[0:len(db.segments) - 1]
 	newPath := filepath.Join(db.dirPath, segmentPrefix + "-merged")
 
@@ -181,6 +182,14 @@ func (db *Db) merge() error {
 	}
 
 	db.segments = []*segment{mergedSeg, db.tail()}
+
+	_, err = os.OpenFile(db.segments[0].filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		db.segments = previos
+		os.Remove(newPath)
+		return err
+	}
+
 	for _, segment := range mergees {
 		_ = segment.close()
 		_ = os.Remove(segment.filePath)
