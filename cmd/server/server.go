@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -21,6 +20,11 @@ var db = flag.String("database", "http://database:18080/db/", "server database")
 
 const confResponseDelaySec = "CONF_RESPONSE_DELAY_SEC"
 const confHealthFailure = "CONF_HEALTH_FAILURE"
+
+type Msg struct {
+	Key string
+	Value string
+}
 
 func main() {
 	h := new(http.ServeMux)
@@ -75,7 +79,8 @@ func main() {
 			}
 		}
 
-		value, err := ioutil.ReadAll(body.Body)
+		var val Msg
+		err = json.NewDecoder(body.Body).Decode(&val)
 
 		if err != nil {
 			log.Printf("Failed to read body: %s", err)
@@ -85,13 +90,13 @@ func main() {
 
 
 		rw.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(rw).Encode(string(value))
+		_ = json.NewEncoder(rw).Encode(val)
 	})
 
 	h.Handle("/report", report)
 
 	server := httptools.CreateServer(*port, h)
-	date := time.Now().Format("2010-05-29")
+	date := "2010-05-29"
 	res, err := http.Post(*db + "reallygreatband", "application/json", bytes.NewBuffer([]byte(fmt.Sprintf(`{"value": "%s"}`, date))))
 	if err != nil || res.StatusCode != http.StatusOK {
 		log.Printf("Error posting value current date to database: %s", err)

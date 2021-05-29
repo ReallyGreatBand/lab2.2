@@ -1,9 +1,10 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	gocheck "gopkg.in/check.v1"
-	"io/ioutil"
+	"log"
 	"net/http"
 	"testing"
 	"time"
@@ -22,6 +23,11 @@ var client = http.Client{
 	Timeout: 3 * time.Second,
 }
 
+type Msg struct {
+	Key string
+	Value string
+}
+
 func (s *MySuiteBalancer) TestBalancer(c *gocheck.C) {
 	// TODO: Реалізуйте інтеграційний тест для балансувальникка.
 	serverPool := []string{
@@ -32,22 +38,27 @@ func (s *MySuiteBalancer) TestBalancer(c *gocheck.C) {
 	authors := make(chan [2]string, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/some-data?key=reallygreatband", baseAddress), nil)
-			resp, err := client.Do(req) // Сервер занадто швидко обробляє запити, тест можливий тільки якщо є довга операція обробки запиту серверами(наприклад sleep)
+			resp, err := client.Get(fmt.Sprintf("%s/api/v1/some-data?key=reallygreatband", baseAddress)) // Сервер занадто швидко обробляє запити, тест можливий тільки якщо є довга операція обробки запиту серверами(наприклад sleep)
 
 			if err != nil {
 				c.Error(err)
 			}
-			val, _ := ioutil.ReadAll(resp.Body)
+			var val Msg
+			err = json.NewDecoder(resp.Body).Decode(&val)
+			if err != nil {
+				log.Printf("%s", err)
+			}
 			respServer := resp.Header.Get("Lb-from")
-			authors <- [2]string{respServer, string(val)}
+			authors <- [2]string{respServer, val.Value}
 		}()
 		time.Sleep(time.Duration(20) * time.Millisecond)
 	}
 	for i := 0; i < 10; i++ {
 		auth := <- authors
+		log.Printf("%v", auth[1])
+		log.Printf("%v", i)
 		c.Assert(auth[0], gocheck.Equals, serverPool[i%3])
-		c.Assert(auth[0], gocheck.Equals, "29050-41-299")
+		c.Assert(auth[1], gocheck.Equals, "2010-05-29")
 	}
 }
 
