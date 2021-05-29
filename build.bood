@@ -21,7 +21,7 @@ tested_binary {
     "signal/**/*.go",
     "cmd/db/*.go"
   ],
-  testPkg: "./cmd/db/...",
+  testPkg: "./cmd/db/",
   srcsExclude: ["**/*_test.go"],
   testSrcs: ["cmd/db/*_test.go"]
 }
