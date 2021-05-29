@@ -17,7 +17,7 @@ import (
 )
 
 var port = flag.Int("port", 8080, "server port")
-var db = flag.String("database", "http://mydb:18080/db/", "server database")
+var db = flag.String("database", "http://database:18080/db/", "server database")
 
 const confResponseDelaySec = "CONF_RESPONSE_DELAY_SEC"
 const confHealthFailure = "CONF_HEALTH_FAILURE"
@@ -49,7 +49,9 @@ func main() {
 
 		rw.Header().Set("content-type", "application/json")
 		key, ok := r.URL.Query()["key"]
+
 		if !ok || len(key) == 0 {
+			log.Printf("Bad request")
 			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -89,10 +91,10 @@ func main() {
 	h.Handle("/report", report)
 
 	server := httptools.CreateServer(*port, h)
-	date := time.Now().Format("2021-05-29")
+	date := time.Now().Format("2010-05-29")
 	res, err := http.Post(*db + "reallygreatband", "application/json", bytes.NewBuffer([]byte(fmt.Sprintf(`{"value": "%s"}`, date))))
 	if err != nil || res.StatusCode != http.StatusOK {
-		log.Printf("Error posting value current dat to database")
+		log.Printf("Error posting value current date to database: %s", err)
 	}
 
 	log.Printf("Sent value %s", date)
