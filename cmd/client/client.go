@@ -18,7 +18,6 @@ func main() {
 	for range time.Tick(200 * time.Millisecond) {
 		go func() {
 			resp, err := client.Get(fmt.Sprintf("%s/api/v1/some-data", *target))
-			fmt.Println(resp.Header.Get("lb-from"))
 			if err == nil {
 				log.Printf("response %d", resp.StatusCode)
 			} else {
