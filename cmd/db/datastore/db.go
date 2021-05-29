@@ -8,33 +8,83 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
-const outFileName = "current-data"
-const defaultSegment = 10485760
+const DefaultSegment = 10485760
 const segmentPrefix = "segment"
 var ErrNotFound = fmt.Errorf("record does not exist")
 
 
+type writeRecord struct {
+	key string
+	value string
+	result chan error
+	close bool
+}
 
 type Db struct {
+	mux *sync.RWMutex
 	dirPath string
 	segments []*segment
 	segSize int64
+	writeQueue chan writeRecord
+	getChan chan int
+	getCounter safeCounter
+	isClosed bool
 }
 
-func NewDb(dir string, segmentSize int64) (*Db, error) {
+func NewDb(dir string, segmentSize int64, numWorkers int) (*Db, error) {
+
 	db := &Db{
+		mux: &sync.RWMutex{},
 		dirPath: dir,
 		segments: nil,
 		segSize: segmentSize,
+		writeQueue: make(chan writeRecord),
+		getChan: make(chan  int, numWorkers),
+		getCounter: safeCounter{
+			mux: &sync.Mutex{},
+			counter: 0,
+		},
 	}
 	err := db.recover()
+	go db.writeWorker()
+
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
 	return db, nil
 }
+
+func (db *Db) writeWorker() {
+	for record := range db.writeQueue {
+		if record.close {
+			return
+		}
+		db.mux.Lock()
+		err := db.tail().put(record.key, record.value)
+		if err != nil {
+			db.mux.Unlock()
+			record.result <- err
+			continue
+		}
+
+		if db.tail().outOffset >= db.segSize {
+			err := db.createSegment()
+			if err != nil {
+				db.mux.Unlock()
+				record.result <- err
+				continue
+			}
+		}
+
+		db.mux.Unlock()
+		record.result <- nil
+	}
+}
+
+
 
 func (db *Db) recover() error {
 	contents, err := ioutil.ReadDir(db.dirPath)
@@ -74,39 +124,31 @@ func (db *Db) recover() error {
 }
 
 func (db *Db) Close() error {
+	if db.isClosed {
+		return fmt.Errorf("database is already closed")
+	}
+	db.writeQueue <- writeRecord{close: true}
 	for _, seg := range db.segments {
 		err := seg.close()
 		if err != nil {
 			return err
 		}
 	}
+	db.isClosed = true
 	return nil
 }
 
-func (db *Db) Get(key string) (string, error) {
-	for _, seg := range db.segments {
-		value, err := seg.get(key)
-		if err == nil {
-			return value, err
-		}
-	}
 
-	return "", fmt.Errorf("did't find any value at the key: %s", key)
-}
 
 func (db *Db) Put(key, value string) error {
-	err := db.tail().put(key, value)
-	if err != nil {
-		return err
+	rec := writeRecord{
+		key: key,
+		value: value,
+		result: make(chan error),
 	}
+	db.writeQueue <- rec
 
-	if db.tail().outOffset >= db.segSize {
-		err := db.createSegment()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return <- rec.result
 }
 
 func (db *Db) tail() *segment {
@@ -130,8 +172,16 @@ func (db *Db) createSegment() error {
 	}
 	db.segments = append(db.segments, seg)
 
+	//mergeChan := merge{close: false}
+
 	if len(db.segments) > 2 {
-		return db.merge()
+		err := db.merge()
+		if err != nil {
+			return err
+		}
+		/*go func() {
+			db.mergeQueue <- mergeChan
+		}()*/
 	}
 
 	return nil
@@ -139,7 +189,7 @@ func (db *Db) createSegment() error {
 
 func (db *Db) merge() error {
 	previos := db.segments
-	mergees := db.segments[0:len(db.segments) - 1]
+	mergees := db.segments[0:len(db.segments) - 1] //segment-merged segment3 // segemnt0 segment1 -> segment0 segment2 -> segment0 segment3
 	newPath := filepath.Join(db.dirPath, segmentPrefix + "-merged")
 
 	file, err := os.OpenFile(newPath, os.O_WRONLY|os.O_CREATE, 0o600)
@@ -181,18 +231,30 @@ func (db *Db) merge() error {
 		}
 	}
 
-	db.segments = []*segment{mergedSeg, db.tail()}
 
-	_, err = os.OpenFile(db.segments[0].filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
+	newSeg := []*segment{mergedSeg}
+	db.segments = append(newSeg, db.segments[len(mergees):]...)
+
+	err = os.Rename(newPath, mergees[0].filePath)
 	if err != nil {
 		db.segments = previos
 		os.Remove(newPath)
 		return err
 	}
+	f, err := os.OpenFile(mergees[0].filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		db.segments = previos
+		os.Remove(newPath)
+		return err
+	}
+	mergedSeg.file = f
+	mergedSeg.filePath = mergees[0].filePath
 
 	for _, segment := range mergees {
 		_ = segment.close()
-		_ = os.Remove(segment.filePath)
+		if segment != mergees[0] {
+			_ = os.Remove(segment.filePath)
+		}
 	}
 	return nil
 }

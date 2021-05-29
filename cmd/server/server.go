@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,6 +17,7 @@ import (
 )
 
 var port = flag.Int("port", 8080, "server port")
+var db = flag.String("database", "http://mydb:18080/db/", "server database")
 
 const confResponseDelaySec = "CONF_RESPONSE_DELAY_SEC"
 const confHealthFailure = "CONF_HEALTH_FAILURE"
@@ -43,15 +48,54 @@ func main() {
 		report.Process(r)
 
 		rw.Header().Set("content-type", "application/json")
+		key, ok := r.URL.Query()["key"]
+		if !ok || len(key) == 0 {
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		body, err := http.Get(*db + key[0])
+		if err != nil {
+			log.Printf("Error sending request to database: %s", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if body.StatusCode != http.StatusOK {
+			switch body.StatusCode {
+			case http.StatusNotFound:
+				rw.WriteHeader(http.StatusNotFound)
+				log.Printf("Key not found %s", key)
+				return
+			default:
+				rw.WriteHeader(http.StatusInternalServerError)
+				log.Printf("Internal error looking for %s", key)
+				return
+			}
+		}
+
+		value, err := ioutil.ReadAll(body.Body)
+
+		if err != nil {
+			log.Printf("Failed to read body: %s", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+
 		rw.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(rw).Encode([]string{
-			"1", "2",
-		})
+		_ = json.NewEncoder(rw).Encode(string(value))
 	})
 
 	h.Handle("/report", report)
 
 	server := httptools.CreateServer(*port, h)
+	date := time.Now().Format("2021-05-29")
+	res, err := http.Post(*db + "reallygreatband", "application/json", bytes.NewBuffer([]byte(fmt.Sprintf(`{"value": "%s"}`, date))))
+	if err != nil || res.StatusCode != http.StatusOK {
+		log.Printf("Error posting value current dat to database")
+	}
+
+	log.Printf("Sent value %s", date)
 	server.Start()
 	signal.WaitForTerminationSignal()
 }
