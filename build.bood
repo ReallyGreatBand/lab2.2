@@ -15,7 +15,7 @@ tested_binary {
 tested_binary {
   name: "db",
   // TODO: Відкорегуйте ім'я пакета.
-  pkg: "github.com/ReallyGreatBand/lab2.2/cmd/db/datastore",
+  pkg: "github.com/ReallyGreatBand/lab2.2/cmd/db",
   srcs: [
     "httptools/**/*.go",
     "signal/**/*.go",
