@@ -158,6 +158,7 @@ func main() {
 
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		// TODO: Рееалізуйте свій алгоритм балансувальника.
+
 		server, restore, err := serversPool.getLeastConnected()
 		if err != nil {
 			log.Println(err)
