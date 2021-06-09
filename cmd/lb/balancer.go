@@ -55,7 +55,9 @@ func (lc *leastConnections) getLeastConnected() (*server, func(), error) {
 	lc.servers[index].counter++
 	lc.mutex.Unlock()
 	return lc.servers[index], func() {
+		lc.mutex.Lock()
 		lc.servers[index].counter--
+		lc.mutex.Unlock()
 	}, nil
 }
 
